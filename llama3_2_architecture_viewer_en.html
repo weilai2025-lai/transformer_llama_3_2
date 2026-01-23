@@ -34,11 +34,16 @@
         }
 
         .info-table {
-            max-width: 600px;
+            max-width: 800px;
             margin: 0 auto 20px;
             background: rgba(255, 255, 255, 0.05);
             border-radius: 10px;
             padding: 15px;
+        }
+
+        .info-table h4 {
+            margin: 0 0 10px 0;
+            color: #fff;
         }
 
         .info-table table {
@@ -46,13 +51,36 @@
             border-collapse: collapse;
         }
 
-        .info-table td {
-            padding: 5px 10px;
+        .info-table td,
+        .info-table th {
+            padding: 6px 10px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: left;
+        }
+
+        .info-table th {
+            color: #888;
+            font-weight: normal;
         }
 
         .info-table td:first-child {
             color: #888;
+        }
+
+        .weight-table {
+            margin-top: 15px;
+        }
+
+        .weight-table th {
+            background: rgba(255, 255, 255, 0.05);
+            color: #4299e1 !important;
+            font-weight: 600 !important;
+        }
+
+        .weight-dim {
+            color: #34d399;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 13px;
         }
 
         .controls {
@@ -181,7 +209,7 @@
         }
 
         .legend {
-            max-width: 900px;
+            max-width: 1000px;
             margin: 20px auto 0;
             background: rgba(255, 255, 255, 0.05);
             border-radius: 10px;
@@ -238,38 +266,119 @@
         .code-block .shape {
             color: #34d399;
         }
+
+        .weight-name {
+            color: #f472b6;
+        }
     </style>
 </head>
 
 <body>
     <h1>🦙 Llama 3.2 3B Architecture Visualization</h1>
-    <p class="subtitle">Accurate tensor shapes based on your input sequence length</p>
+    <p class="subtitle">Accurate tensor shapes and weight matrix dimensions</p>
 
     <div class="info-table">
+        <h4>📊 Model Configuration</h4>
         <table>
             <tr>
                 <td>Architecture</td>
                 <td><b>Pre-LayerNorm Transformer</b></td>
+                <td>vocab_size</td>
+                <td><b>128,256</b></td>
             </tr>
             <tr>
                 <td>hidden_size</td>
                 <td><b>3072</b></td>
-            </tr>
-            <tr>
                 <td>num_hidden_layers</td>
                 <td><b>28</b></td>
             </tr>
             <tr>
                 <td>num_attention_heads</td>
                 <td><b>24</b> (GQA: 8 KV heads)</td>
-            </tr>
-            <tr>
                 <td>head_dim</td>
                 <td><b>128</b></td>
             </tr>
             <tr>
                 <td>intermediate_size</td>
-                <td><b>8192</b> (SwiGLU)</td>
+                <td><b>8192</b> (MLP / SwiGLU)</td>
+                <td>rope_theta</td>
+                <td><b>500,000</b></td>
+            </tr>
+        </table>
+
+        <h4 style="margin-top: 20px;">📦 Weight Matrix Dimensions (per layer × 28)</h4>
+        <table class="weight-table">
+            <tr>
+                <th>Component</th>
+                <th>Weight Name</th>
+                <th>Shape</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td>Embedding</td>
+                <td class="weight-name">embed_tokens.weight</td>
+                <td class="weight-dim">[128256, 3072]</td>
+                <td>Vocabulary → Hidden</td>
+            </tr>
+            <tr>
+                <td rowspan="4">Self-Attention</td>
+                <td class="weight-name">self_attn.q_proj.weight</td>
+                <td class="weight-dim">[3072, 3072]</td>
+                <td>Query: 24 heads × 128 dim</td>
+            </tr>
+            <tr>
+                <td class="weight-name">self_attn.k_proj.weight</td>
+                <td class="weight-dim">[1024, 3072]</td>
+                <td>Key: 8 heads × 128 dim (GQA)</td>
+            </tr>
+            <tr>
+                <td class="weight-name">self_attn.v_proj.weight</td>
+                <td class="weight-dim">[1024, 3072]</td>
+                <td>Value: 8 heads × 128 dim (GQA)</td>
+            </tr>
+            <tr>
+                <td class="weight-name">self_attn.o_proj.weight</td>
+                <td class="weight-dim">[3072, 3072]</td>
+                <td>Output projection</td>
+            </tr>
+            <tr>
+                <td rowspan="3">MLP (SwiGLU)</td>
+                <td class="weight-name">mlp.gate_proj.weight</td>
+                <td class="weight-dim">[8192, 3072]</td>
+                <td>Gate projection</td>
+            </tr>
+            <tr>
+                <td class="weight-name">mlp.up_proj.weight</td>
+                <td class="weight-dim">[8192, 3072]</td>
+                <td>Up projection</td>
+            </tr>
+            <tr>
+                <td class="weight-name">mlp.down_proj.weight</td>
+                <td class="weight-dim">[3072, 8192]</td>
+                <td>Down projection</td>
+            </tr>
+            <tr>
+                <td rowspan="2">LayerNorm</td>
+                <td class="weight-name">input_layernorm.weight</td>
+                <td class="weight-dim">[3072]</td>
+                <td>RMSNorm (no bias)</td>
+            </tr>
+            <tr>
+                <td class="weight-name">post_attention_layernorm.weight</td>
+                <td class="weight-dim">[3072]</td>
+                <td>RMSNorm (no bias)</td>
+            </tr>
+            <tr>
+                <td>Final Norm</td>
+                <td class="weight-name">model.norm.weight</td>
+                <td class="weight-dim">[3072]</td>
+                <td>Final RMSNorm</td>
+            </tr>
+            <tr>
+                <td>LM Head</td>
+                <td class="weight-name">lm_head.weight</td>
+                <td class="weight-dim">[128256, 3072]</td>
+                <td>Hidden → Vocabulary</td>
             </tr>
         </table>
     </div>
@@ -335,7 +444,6 @@
         let selectedLayers = new Set([0]);
         let seqLen = 3;
 
-        // Update sequence length
         document.getElementById('seqLen').addEventListener('input', function (e) {
             const val = parseInt(e.target.value);
             if (val >= 1 && val <= 8192) {
@@ -346,21 +454,42 @@
         });
 
         function updateShapeReference() {
+            const s = seqLen;
             const ref = document.getElementById('shapeReference');
             ref.innerHTML = `
-                <span class="comment"># Tensor Shapes for seq_len = ${seqLen}</span><br><br>
-                <span class="keyword">Input:</span> X.shape = <span class="shape">[${seqLen}, 3072]</span><br>
-                <span class="keyword">After RMSNorm:</span> X_norm.shape = <span class="shape">[${seqLen}, 3072]</span><br><br>
-                <span class="comment"># Q/K/V Projections</span><br>
-                Q = X_norm · Wq <span class="shape">[${seqLen}, 3072]</span> → reshape → <span class="shape">[${seqLen}, 24, 128]</span><br>
-                K = X_norm · Wk <span class="shape">[${seqLen}, 1024]</span> → reshape → <span class="shape">[${seqLen}, 8, 128]</span><br>
-                V = X_norm · Wv <span class="shape">[${seqLen}, 1024]</span> → reshape → <span class="shape">[${seqLen}, 8, 128]</span><br><br>
-                <span class="comment"># Attention (per head, Q head shares K/V head via GQA)</span><br>
-                score = Q · Kᵀ → <span class="shape">[${seqLen}, ${seqLen}]</span><br>
-                attn = softmax(score / √128) → <span class="shape">[${seqLen}, ${seqLen}]</span><br>
-                out = attn · V → <span class="shape">[${seqLen}, 128]</span><br><br>
-                <span class="comment"># After concat all 24 heads</span><br>
-                out_concat = <span class="shape">[${seqLen}, 3072]</span>
+                <span class="comment"># Complete Forward Pass for seq_len = ${s}</span><br><br>
+                <span class="comment">## Embedding</span><br>
+                input_ids: <span class="shape">[${s}]</span><br>
+                X = embed_tokens[input_ids] → <span class="shape">[${s}, 3072]</span><br><br>
+                <span class="comment">## Per Layer (×28)</span><br>
+                residual = X<br>
+                X_norm = RMSNorm(X) → <span class="shape">[${s}, 3072]</span><br><br>
+                <span class="comment"># Q/K/V Projections: X_norm @ W.T</span><br>
+                Q = X_norm @ <span class="weight-name">Wq.T</span> → <span class="shape">[${s}, 3072]</span> → reshape → <span class="shape">[${s}, 24, 128]</span><br>
+                K = X_norm @ <span class="weight-name">Wk.T</span> → <span class="shape">[${s}, 1024]</span> → reshape → <span class="shape">[${s}, 8, 128]</span><br>
+                V = X_norm @ <span class="weight-name">Wv.T</span> → <span class="shape">[${s}, 1024]</span> → reshape → <span class="shape">[${s}, 8, 128]</span><br><br>
+                <span class="comment"># RoPE (only Q and K)</span><br>
+                Q_rot, K_rot = RoPE(Q, K)<br><br>
+                <span class="comment"># Attention (per head, GQA: 3 Q heads share 1 KV head)</span><br>
+                score = Q @ K.T / √128 → <span class="shape">[${s}, ${s}]</span> per head<br>
+                attn = softmax(score) → <span class="shape">[${s}, ${s}]</span><br>
+                out = attn @ V → <span class="shape">[${s}, 128]</span> per head<br>
+                out_concat = concat(24 heads) → <span class="shape">[${s}, 3072]</span><br>
+                out = out_concat @ <span class="weight-name">Wo.T</span> → <span class="shape">[${s}, 3072]</span><br><br>
+                <span class="comment"># Residual Add #1</span><br>
+                X = residual + out → <span class="shape">[${s}, 3072]</span><br><br>
+                <span class="comment"># MLP (SwiGLU)</span><br>
+                residual = X<br>
+                X_norm = RMSNorm(X)<br>
+                gate = X_norm @ <span class="weight-name">Wgate.T</span> → <span class="shape">[${s}, 8192]</span><br>
+                up = X_norm @ <span class="weight-name">Wup.T</span> → <span class="shape">[${s}, 8192]</span><br>
+                hidden = SiLU(gate) × up → <span class="shape">[${s}, 8192]</span><br>
+                down = hidden @ <span class="weight-name">Wdown.T</span> → <span class="shape">[${s}, 3072]</span><br><br>
+                <span class="comment"># Residual Add #2</span><br>
+                X = residual + down → <span class="shape">[${s}, 3072]</span><br><br>
+                <span class="comment">## Output</span><br>
+                X = RMSNorm(X) → <span class="shape">[${s}, 3072]</span><br>
+                logits = X @ <span class="weight-name">lm_head.T</span> → <span class="shape">[${s}, 128256]</span>
             `;
         }
 
@@ -421,29 +550,29 @@
     subgraph L${i}["📦 ${layerName}"]
         L${i}_IN(["X: [${s}, 3072]"])
         
-        L${i}_RES1{{"residual_1"}}
+        L${i}_RES1{{"residual"}}
         L${i}_NORM1["RMSNorm<br/>[${s}, 3072]"]
         
         subgraph L${i}_ATTN["Self-Attention (GQA)"]
-            L${i}_Q["Q = X·Wq<br/>[${s}, 3072]<br/>→ [${s}, 24, 128]"]
-            L${i}_K["K = X·Wk<br/>[${s}, 1024]<br/>→ [${s}, 8, 128]"]
-            L${i}_V["V = X·Wv<br/>[${s}, 1024]<br/>→ [${s}, 8, 128]"]
+            L${i}_Q["Q = X @ Wq.T<br/>Wq: [3072, 3072]<br/>→ [${s}, 24, 128]"]
+            L${i}_K["K = X @ Wk.T<br/>Wk: [1024, 3072]<br/>→ [${s}, 8, 128]"]
+            L${i}_V["V = X @ Wv.T<br/>Wv: [1024, 3072]<br/>→ [${s}, 8, 128]"]
             L${i}_ROPE["🔄 RoPE<br/>Q,K only"]
-            L${i}_SCORE["⚡ QK^T/√128<br/>[${s}, ${s}] per head"]
-            L${i}_MATMUL["softmax × V<br/>[${s}, 128] per head"]
-            L${i}_O["concat → o_proj<br/>[${s}, 3072]"]
+            L${i}_SCORE["⚡ Q @ K.T / √128<br/>[${s}, ${s}] per head"]
+            L${i}_MATMUL["softmax @ V<br/>[${s}, 128] per head"]
+            L${i}_O["concat @ Wo.T<br/>Wo: [3072, 3072]<br/>→ [${s}, 3072]"]
         end
         
         L${i}_ADD1((("⊕")))
         
-        L${i}_RES2{{"residual_2"}}
+        L${i}_RES2{{"residual"}}
         L${i}_NORM2["RMSNorm<br/>[${s}, 3072]"]
         
         subgraph L${i}_MLP["MLP (SwiGLU)"]
-            L${i}_GATE["gate: [${s}, 8192]"]
-            L${i}_UP["up: [${s}, 8192]"]
-            L${i}_SILU["SiLU(gate) × up"]
-            L${i}_DOWN["down: [${s}, 3072]"]
+            L${i}_GATE["gate = X @ Wgate.T<br/>Wgate: [8192, 3072]<br/>→ [${s}, 8192]"]
+            L${i}_UP["up = X @ Wup.T<br/>Wup: [8192, 3072]<br/>→ [${s}, 8192]"]
+            L${i}_SILU["SiLU(gate) × up<br/>[${s}, 8192]"]
+            L${i}_DOWN["down = h @ Wdown.T<br/>Wdown: [3072, 8192]<br/>→ [${s}, 3072]"]
         end
         
         L${i}_ADD2((("⊕")))
@@ -496,7 +625,7 @@
     end
 
     subgraph Embedding["🔹 Embedding"]
-        B["embed_tokens<br/>[${s}] → [${s}, 3072]"]
+        B["embed_tokens<br/>Weight: [128256, 3072]<br/>[${s}] → [${s}, 3072]"]
     end
 
     A --> B
@@ -507,8 +636,8 @@
     B -.->|"skip 28 layers"| G
 
     subgraph Output["🔹 Output"]
-        G["RMSNorm [${s}, 3072]"]
-        H["lm_head [${s}, 128256]"]
+        G["Final RMSNorm<br/>[${s}, 3072]"]
+        H["lm_head<br/>Weight: [128256, 3072]<br/>[${s}, 3072] → [${s}, 128256]"]
         I["logits"]
     end
 
@@ -552,8 +681,8 @@
 
                 code += `
     subgraph Output["🔹 Output"]
-        G["RMSNorm [${s}, 3072]"]
-        H["lm_head [${s}, 128256]"]
+        G["Final RMSNorm<br/>[${s}, 3072]"]
+        H["lm_head<br/>Weight: [128256, 3072]<br/>[${s}, 3072] → [${s}, 128256]"]
         I["logits"]
     end
 

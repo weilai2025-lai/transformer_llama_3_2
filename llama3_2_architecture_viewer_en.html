@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Llama 3.2 3B Architecture Visualization (Accurate)</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #e0e0e0;
+        }
+
+        h1 {
+            text-align: center;
+            color: #fff;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .info-table {
+            max-width: 600px;
+            margin: 0 auto 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 15px;
+        }
+
+        .info-table table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .info-table td {
+            padding: 5px 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .info-table td:first-child {
+            color: #888;
+        }
+
+        .controls {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            max-width: 900px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .controls h3 {
+            margin-top: 0;
+            color: #fff;
+        }
+
+        .layer-toggles {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+
+        .layer-btn {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+            background: #2d3748;
+            color: #a0aec0;
+        }
+
+        .layer-btn:hover {
+            background: #4a5568;
+        }
+
+        .layer-btn.active {
+            background: #4299e1;
+            color: white;
+        }
+
+        .quick-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .quick-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .quick-btn.all {
+            background: #48bb78;
+            color: white;
+        }
+
+        .quick-btn.none {
+            background: #fc8181;
+            color: white;
+        }
+
+        .quick-btn.first-last {
+            background: #9f7aea;
+            color: white;
+        }
+
+        .quick-btn.first-three {
+            background: #ed8936;
+            color: white;
+        }
+
+        .diagram-container {
+            background: #fff;
+            border-radius: 10px;
+            padding: 20px;
+            overflow-x: auto;
+            max-width: 100%;
+        }
+
+        .mermaid {
+            text-align: center;
+        }
+
+        .legend {
+            max-width: 800px;
+            margin: 20px auto 0;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 15px;
+        }
+
+        .legend h4 {
+            margin-top: 0;
+            color: #fff;
+        }
+
+        .legend-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            margin-right: 10px;
+            flex-shrink: 0;
+        }
+
+        .code-block {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            overflow-x: auto;
+        }
+
+        .code-block .comment {
+            color: #6b7280;
+        }
+
+        .code-block .keyword {
+            color: #f472b6;
+        }
+
+        .code-block .var {
+            color: #60a5fa;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🦙 Llama 3.2 3B Architecture Visualization</h1>
+    <p class="subtitle">Accurate representation of Pre-LayerNorm Transformer with Residual Connections</p>
+
+    <div class="info-table">
+        <table>
+            <tr>
+                <td>Architecture</td>
+                <td><b>Pre-LayerNorm Transformer</b></td>
+            </tr>
+            <tr>
+                <td>hidden_size</td>
+                <td><b>3072</b></td>
+            </tr>
+            <tr>
+                <td>num_hidden_layers</td>
+                <td><b>28</b></td>
+            </tr>
+            <tr>
+                <td>num_attention_heads</td>
+                <td><b>24</b> (GQA: 8 KV heads)</td>
+            </tr>
+            <tr>
+                <td>head_dim</td>
+                <td><b>128</b></td>
+            </tr>
+            <tr>
+                <td>intermediate_size</td>
+                <td><b>8192</b> (SwiGLU)</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="controls">
+        <h3>🎛️ Select Layers to Expand</h3>
+        <div class="layer-toggles" id="layerToggles"></div>
+        <div class="quick-actions">
+            <button class="quick-btn all" onclick="selectAll()">Expand All (28 layers)</button>
+            <button class="quick-btn none" onclick="selectNone()">Collapse All</button>
+            <button class="quick-btn first-last" onclick="selectFirstLast()">L0 + L27 Only</button>
+            <button class="quick-btn first-three" onclick="selectFirstThree()">First 3 Layers</button>
+        </div>
+    </div>
+
+    <div class="diagram-container">
+        <div id="diagram"></div>
+    </div>
+
+    <div class="legend">
+        <h4>📋 Legend + Actual Code Reference</h4>
+        <div class="legend-grid">
+            <div class="legend-item">
+                <div class="legend-color" style="background: #e1f5fe;"></div>
+                <span>🔄 RoPE - Rotary Position Embedding</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #fff3e0;"></div>
+                <span>⚡ Attention Score Computation</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #f3e5f5;"></div>
+                <span>SiLU - SwiGLU Activation</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #c8e6c9;"></div>
+                <span>⊕ Residual Add Node</span>
+            </div>
+        </div>
+        <div class="code-block">
+            <span class="comment"># Llama 3.2 DecoderLayer.forward() - Actual Code</span><br>
+            <span class="var">residual</span> = hidden_states
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span
+                class="comment"># Save original input</span><br>
+            hidden_states = <span class="keyword">input_layernorm</span>(hidden_states)<br>
+            hidden_states = <span class="keyword">self_attn</span>(hidden_states)<br>
+            hidden_states = <span class="var">residual</span> + hidden_states &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span
+                class="comment"># ⊕ Residual Add #1</span><br><br>
+            <span class="var">residual</span> = hidden_states
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span
+                class="comment"># Save intermediate</span><br>
+            hidden_states = <span class="keyword">post_attn_layernorm</span>(hidden_states)<br>
+            hidden_states = <span class="keyword">mlp</span>(hidden_states)<br>
+            hidden_states = <span class="var">residual</span> + hidden_states &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span
+                class="comment"># ⊕ Residual Add #2</span>
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'default',
+            flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+            securityLevel: 'loose'
+        });
+
+        let selectedLayers = new Set([0]);
+
+        function createLayerButtons() {
+            const container = document.getElementById('layerToggles');
+            for (let i = 0; i < 28; i++) {
+                const btn = document.createElement('button');
+                btn.className = 'layer-btn' + (selectedLayers.has(i) ? ' active' : '');
+                btn.textContent = `L${i}`;
+                btn.onclick = () => toggleLayer(i, btn);
+                container.appendChild(btn);
+            }
+        }
+
+        function toggleLayer(index, btn) {
+            if (selectedLayers.has(index)) {
+                selectedLayers.delete(index);
+                btn.classList.remove('active');
+            } else {
+                selectedLayers.add(index);
+                btn.classList.add('active');
+            }
+            renderDiagram();
+        }
+
+        function selectAll() {
+            selectedLayers = new Set([...Array(28).keys()]);
+            document.querySelectorAll('.layer-btn').forEach(btn => btn.classList.add('active'));
+            renderDiagram();
+        }
+
+        function selectNone() {
+            selectedLayers = new Set();
+            document.querySelectorAll('.layer-btn').forEach(btn => btn.classList.remove('active'));
+            renderDiagram();
+        }
+
+        function selectFirstLast() {
+            selectedLayers = new Set([0, 27]);
+            document.querySelectorAll('.layer-btn').forEach((btn, i) => {
+                btn.classList.toggle('active', i === 0 || i === 27);
+            });
+            renderDiagram();
+        }
+
+        function selectFirstThree() {
+            selectedLayers = new Set([0, 1, 2]);
+            document.querySelectorAll('.layer-btn').forEach((btn, i) => {
+                btn.classList.toggle('active', i < 3);
+            });
+            renderDiagram();
+        }
+
+        function generateLayerCode(i, isLast) {
+            const layerName = isLast ? `Layer ${i} Final` : `Layer ${i}`;
+            return `
+    subgraph L${i}["📦 ${layerName}"]
+        L${i}_IN(["hidden_states input"])
+        
+        L${i}_RES1{{"residual_1 = x"}}
+        L${i}_NORM1["input_layernorm<br/>RMSNorm"]
+        
+        subgraph L${i}_ATTN["Self-Attention Block"]
+            L${i}_Q["q_proj<br/>3072→3072<br/>24 heads"]
+            L${i}_K["k_proj<br/>3072→1024<br/>8 heads"]
+            L${i}_V["v_proj<br/>3072→1024<br/>8 heads"]
+            L${i}_ROPE["🔄 RoPE<br/>Q,K pos encoding"]
+            L${i}_SCORE["⚡ Attention<br/>softmax QK^T/√128"]
+            L${i}_MATMUL["Score × V"]
+            L${i}_O["o_proj<br/>3072→3072"]
+        end
+        
+        L${i}_ADD1((("⊕")))
+        
+        L${i}_RES2{{"residual_2 = x"}}
+        L${i}_NORM2["post_attn_layernorm<br/>RMSNorm"]
+        
+        subgraph L${i}_MLP["MLP Block - SwiGLU"]
+            L${i}_GATE["gate_proj<br/>3072→8192"]
+            L${i}_UP["up_proj<br/>3072→8192"]
+            L${i}_SILU["SiLU gate × up"]
+            L${i}_DOWN["down_proj<br/>8192→3072"]
+        end
+        
+        L${i}_ADD2((("⊕")))
+        
+        L${i}_OUT(["hidden_states output"])
+    end
+
+    %% Data flow: input splits
+    L${i}_IN --> L${i}_RES1
+    L${i}_IN --> L${i}_NORM1
+    
+    %% Attention Block internals
+    L${i}_NORM1 --> L${i}_Q
+    L${i}_NORM1 --> L${i}_K
+    L${i}_NORM1 --> L${i}_V
+    L${i}_Q --> L${i}_ROPE
+    L${i}_K --> L${i}_ROPE
+    L${i}_ROPE --> L${i}_SCORE
+    L${i}_V --> L${i}_MATMUL
+    L${i}_SCORE --> L${i}_MATMUL
+    L${i}_MATMUL --> L${i}_O
+    
+    %% Residual Add #1
+    L${i}_RES1 --> L${i}_ADD1
+    L${i}_O --> L${i}_ADD1
+    
+    %% Second stage split
+    L${i}_ADD1 --> L${i}_RES2
+    L${i}_ADD1 --> L${i}_NORM2
+    
+    %% MLP Block internals
+    L${i}_NORM2 --> L${i}_GATE
+    L${i}_NORM2 --> L${i}_UP
+    L${i}_GATE --> L${i}_SILU
+    L${i}_UP --> L${i}_SILU
+    L${i}_SILU --> L${i}_DOWN
+    
+    %% Residual Add #2
+    L${i}_RES2 --> L${i}_ADD2
+    L${i}_DOWN --> L${i}_ADD2
+    
+    %% Output
+    L${i}_ADD2 --> L${i}_OUT
+
+    %% Styles
+    style L${i}_ROPE fill:#e1f5fe,stroke:#0288d1
+    style L${i}_SCORE fill:#fff3e0,stroke:#f57c00
+    style L${i}_MATMUL fill:#fff3e0,stroke:#f57c00
+    style L${i}_SILU fill:#f3e5f5,stroke:#7b1fa2
+    style L${i}_ADD1 fill:#c8e6c9,stroke:#388e3c
+    style L${i}_ADD2 fill:#c8e6c9,stroke:#388e3c
+    style L${i}_RES1 fill:#fff9c4,stroke:#f9a825
+    style L${i}_RES2 fill:#fff9c4,stroke:#f9a825
+`;
+        }
+
+        async function renderDiagram() {
+            const sortedLayers = [...selectedLayers].sort((a, b) => a - b);
+
+            let code = `graph TD
+    subgraph Input["🔹 Input Layer"]
+        A["input_ids<br/>batch × seq_len"]
+    end
+
+    subgraph Embedding["🔹 Embedding"]
+        B["embed_tokens<br/>128256 → 3072"]
+    end
+
+    A --> B
+`;
+
+            if (sortedLayers.length === 0) {
+                code += `
+    B -.->|"skip 28 layers"| G
+
+    subgraph Output["🔹 Output Layer"]
+        G["Final RMSNorm"]
+        H["lm_head<br/>3072 → 128256"]
+        I["logits"]
+    end
+
+    G --> H --> I
+`;
+            } else {
+                let lastIndex = -1;
+
+                for (let i = 0; i < sortedLayers.length; i++) {
+                    const layerIndex = sortedLayers[i];
+                    const isLast = layerIndex === 27;
+
+                    code += generateLayerCode(layerIndex, isLast);
+
+                    if (lastIndex === -1) {
+                        if (layerIndex > 0) {
+                            code += `    B -.->|"skip ${layerIndex} layers"| L${layerIndex}_IN\n`;
+                        } else {
+                            code += `    B --> L${layerIndex}_IN\n`;
+                        }
+                    } else {
+                        const skipped = layerIndex - lastIndex - 1;
+                        if (skipped > 0) {
+                            code += `    L${lastIndex}_OUT -.->|"skip ${skipped} layers"| L${layerIndex}_IN\n`;
+                        } else {
+                            code += `    L${lastIndex}_OUT --> L${layerIndex}_IN\n`;
+                        }
+                    }
+
+                    lastIndex = layerIndex;
+                }
+
+                const lastSelected = sortedLayers[sortedLayers.length - 1];
+                const remaining = 27 - lastSelected;
+
+                if (remaining > 0) {
+                    code += `    L${lastSelected}_OUT -.->|"skip ${remaining} layers"| G\n`;
+                } else {
+                    code += `    L${lastSelected}_OUT --> G\n`;
+                }
+
+                code += `
+    subgraph Output["🔹 Output Layer"]
+        G["Final RMSNorm"]
+        H["lm_head<br/>3072 → 128256"]
+        I["logits"]
+    end
+
+    G --> H --> I
+`;
+            }
+
+            const container = document.getElementById('diagram');
+            container.innerHTML = '<div class="mermaid">' + code + '</div>';
+
+            await mermaid.run();
+        }
+
+        createLayerButtons();
+        renderDiagram();
+    </script>
+</body>
+
+</html>

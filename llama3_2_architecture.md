@@ -17,29 +17,35 @@
 
 ## 架構圖
 
+> **注意**：下圖中的 "Single Decoder Layer" 會**重複 28 次**（Layer 0 ~ Layer 27），每層的輸出作為下一層的輸入。
+
 ```mermaid
 graph TD
-    subgraph Input["輸入層"]
+    subgraph Input["🔹 輸入層"]
         A[input_ids<br/>shape: batch, seq_len]
     end
 
-    subgraph Embedding["Embedding"]
+    subgraph Embedding["🔹 Embedding"]
         B[embed_tokens<br/>vocab_size: 128256<br/>hidden: 3072]
     end
 
     A --> B
 
-    subgraph DecoderStack["Decoder Layers x 28"]
-        subgraph Layer["Single Decoder Layer"]
+    subgraph DecoderStack["🔁 Decoder Stack（重複 28 次）"]
+        direction TB
+        
+        LAYER_IN[/"Layer i 輸入<br/>[batch, seq, 3072]"/]
+        
+        subgraph Layer["Single Decoder Layer (i = 0, 1, ..., 27)"]
             C[input_layernorm<br/>RMSNorm]
             
-            subgraph Attention["Self-Attention"]
-                D1[q_proj<br/>3072 → 3072]
-                D2[k_proj<br/>3072 → 1024]
-                D3[v_proj<br/>3072 → 1024]
-                D4["🔄 RoPE<br/>Rotary Position Embedding<br/>head_dim: 128"]
-                D5["⚡ Attention Score<br/>Q @ K^T / sqrt(head_dim)"]
-                D6["Softmax + V matmul"]
+            subgraph Attention["Self-Attention (GQA)"]
+                D1[q_proj<br/>3072 → 3072<br/>24 heads]
+                D2[k_proj<br/>3072 → 1024<br/>8 heads]
+                D3[v_proj<br/>3072 → 1024<br/>8 heads]
+                D4["🔄 RoPE<br/>Rotary Position Embedding<br/>套用到 Q 和 K"]
+                D5["⚡ Attention Score<br/>Q @ K^T / √128"]
+                D6["Softmax → × V"]
                 D7[o_proj<br/>3072 → 3072]
             end
             
@@ -48,15 +54,19 @@ graph TD
             subgraph MLP["MLP (SwiGLU)"]
                 F1[gate_proj<br/>3072 → 8192]
                 F2[up_proj<br/>3072 → 8192]
-                F3["SiLU activation"]
+                F3["SiLU(gate) × up"]
                 F4[down_proj<br/>8192 → 3072]
             end
         end
+        
+        LAYER_OUT[\"Layer i 輸出<br/>[batch, seq, 3072]"\]
     end
 
-    B --> C
+    B --> LAYER_IN
+    LAYER_IN --> C
     C --> D1 & D2 & D3
-    D1 & D2 --> D4
+    D1 --> D4
+    D2 --> D4
     D4 --> D5
     D3 --> D6
     D5 --> D6
@@ -66,22 +76,34 @@ graph TD
     F1 --> F3
     F2 --> F3
     F3 --> F4
-    F4 -->|"+ residual"| C
+    F4 -->|"+ residual"| LAYER_OUT
+    
+    LAYER_OUT -.->|"i < 27: 送到 Layer i+1"| LAYER_IN
 
-    subgraph Output["輸出層"]
-        G[norm<br/>RMSNorm]
+    subgraph Output["🔹 輸出層"]
+        G[Final RMSNorm]
         H[lm_head<br/>3072 → 128256]
-        I[logits<br/>shape: batch, seq_len, vocab_size]
+        I[logits<br/>shape: batch, seq, vocab]
     end
 
-    F4 --> G
+    LAYER_OUT -->|"i = 27: 最後一層輸出"| G
     G --> H
     H --> I
 
-    style D4 fill:#e1f5fe
-    style D5 fill:#fff3e0
-    style D6 fill:#fff3e0
-    style F3 fill:#f3e5f5
+    style D4 fill:#e1f5fe,stroke:#0288d1
+    style D5 fill:#fff3e0,stroke:#f57c00
+    style D6 fill:#fff3e0,stroke:#f57c00
+    style F3 fill:#f3e5f5,stroke:#7b1fa2
+    style LAYER_IN fill:#e8f5e9,stroke:#388e3c
+    style LAYER_OUT fill:#e8f5e9,stroke:#388e3c
+```
+
+### 資料流說明
+
+```
+輸入 → Embedding → [Layer 0] → [Layer 1] → ... → [Layer 27] → Final Norm → lm_head → 輸出
+                      ↑                              ↓
+                      └──────── 重複 28 次 ──────────┘
 ```
 
 ## 關鍵組件說明

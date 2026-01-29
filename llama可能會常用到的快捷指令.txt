@@ -1,0 +1,2 @@
+--生成run file
+gcc -O3 -o run run.c -I/opt/homebrew/include -L/opt/homebrew/lib -lpcre -lm 

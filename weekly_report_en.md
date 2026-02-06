@@ -103,19 +103,13 @@ Scale factors (group_size=128, float32):
 Total (storage): 0.53 GB
 ```
 
-### 4.2 Embedding Table (Runtime Memory)
+### 4.2 Embedding Table
 
-**Critical Discovery**: The embedding table is **dequantized to float32** at runtime for fast lookup.
+**Current implementation** (runq.c): Requires **1.0 GB** of runtime memory.
 
-**Formula**:
-```
-Embedding Memory = vocab_size × dim × sizeof(float32)
-                 = 128,256 × 2,048 × 4 bytes
-                 = 1,050,214,400 bytes
-                 ≈ 1.0 GB
-```
+**Potential optimization**: Could be reduced to **0.53 GB** with code modification to keep embedding table in int4 format, but requires additional development effort.
 
-⚠️ **This is a major memory consumer that was initially overlooked.**
+For this analysis, we use **1.0 GB** based on current code.
 
 ### 4.3 KV Cache (Critical Memory Bottleneck)
 

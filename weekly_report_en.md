@@ -88,51 +88,70 @@ uint8_t packed = (val1 & 0x0F) | ((val2 & 0x0F) << 4);
 
 ## 4. Memory Analysis (1GB DDR4 Constraint)
 
-### 4.1 Model Weights (Int4 Version - Storage)
+### 4.1 Model Parameters (Verified from Safetensors)
 
-**Formula**:
+**Actual parameter breakdown** (inspected from `model.safetensors`):
+
+| Component | Parameters | Percentage |
+|-----------|-----------|------------|
+| Embedding (`embed_tokens`) | 128,256 × 2,048 = 262,668,288 | 21.3% |
+| 16 Transformer Layers | 973,144,064 | 78.7% |
+| Final LayerNorm | 2,048 | ~0% |
+| **Total** | **1,235,814,400 (1.236B)** | **100%** |
+
+> [!IMPORTANT]
+> `tie_word_embeddings = true` in config.json — `lm_head` and `embed_tokens` **share the same weights**. No separate `lm_head` tensor exists in the safetensors file.
+
+> [!WARNING]
+> The current bnb-4bit model stores embedding in **bfloat16** (0.525 GB, NOT quantized). Only linear layers are quantized to nf4.
+
+### 4.2 Model Weights in Int4 (Storage)
+
+**Scenario A: All weights quantized to int4 (including embedding)**
 ```
-Weight Size = Parameters × bits_per_param / 8 + scale_overhead
-
-int4 weights (stored on disk):
-  1B × 4 bits / 8 = 0.5 GB
+Weight Size = 1.236B × 4 bits / 8 = 0.618 GB
 
 Scale factors (group_size=128, float32):
-  (1B / 128) × 4 bytes = 31.25 MB
+  (1.236B / 128) × 4 bytes ≈ 0.04 GB
 
-Total (storage): 0.53 GB
+Total weights (int4): ~0.66 GB
 ```
 
-### 4.2 Embedding Table
+**Scenario B: Embedding kept in bfloat16 (like current bnb model)**
+```
+Embedding (bfloat16): 262M × 2 bytes = 0.525 GB
+Other weights (int4): 973M × 4/8 + scale ≈ 0.52 GB
+Total: ~1.04 GB (already exceeds 1 GB!)
+```
 
-**Current implementation** (runq.c): Requires **1.0 GB** of runtime memory.
+### 4.3 KV Cache
 
-**Potential optimization**: Could be reduced to **0.53 GB** with code modification to keep embedding table in int4 format, but requires additional development effort.
-
-For this analysis, we use **1.0 GB** based on current code.
-
-### 4.3 KV Cache (Critical Memory Bottleneck)
+> [!WARNING]
+> **Correction**: This model uses **GQA (Grouped Query Attention)** with `num_key_value_heads = 8` and `head_dim = 64`, so `kv_dim = 8 × 64 = 512` (NOT 2048).
 
 **Formula**:
 ```
 KV_Cache = n_layers × 2 × seq_len × kv_dim × sizeof(float)
+         = 16 × 2 × seq_len × 512 × 4
 ```
-
-**Calculation** (assuming n_layers=16, kv_dim=2048):
 
 | seq_len | KV Cache Size |
 |---------|---------------|
-| 2048 | 16 × 2 × 2048 × 2048 × 4 = **1.0 GB** |
-| 512  | 16 × 2 × 512 × 2048 × 4 = **0.27 GB** |
-| **256**  | **16 × 2 × 256 × 2048 × 4 = 0.13 GB** |
-| 128  | 16 × 2 × 128 × 2048 × 4 = 0.065 GB |
+| 2048 | 16 × 2 × 2048 × 512 × 4 = **0.134 GB** |
+| 512  | 16 × 2 × 512 × 512 × 4 = **0.034 GB** |
+| 256  | 16 × 2 × 256 × 512 × 4 = **0.017 GB** |
+| 128  | 16 × 2 × 128 × 512 × 4 = **0.008 GB** |
 
 ### 4.4 Activations
 
+For token-by-token inference (no batching), buffers are reused across layers:
 ```
-- Intermediate layer buffers (x, xb, q, k, v, etc.): ~50-100 MB
-- Attention scores: n_heads × seq_len × 4 bytes
+- Reusable buffers (x, xb, q, k, v, hb, etc.):
+  dim=2048 and intermediate_size=8192 vectors
+  ~100 KB (reused across layers)
+- Attention scores: num_heads × seq_len × 4 bytes
   (32 × 256 × 4 = 32 KB per layer)
+- Total activation buffers: ~1 MB
 ```
 
 ### 4.5 Logits
@@ -151,49 +170,45 @@ vocab_size × 4 bytes = 128,256 × 4 = 0.5 MB
 
 ### 4.7 Total Memory Requirements (Int4 Version)
 
-| Context Length | Weights | Embedding | KV Cache | Act. | System | **Total** | Feasibility |
-|---------------|---------|-----------|----------|------|--------|-----------|-------------|
-| seq_len=512 | 0.53 GB | 1.0 GB | 0.27 GB | 0.1 GB | 0.25 GB | **2.15 GB** | ❌ Exceeds |
-| seq_len=256 | 0.53 GB | 1.0 GB | 0.13 GB | 0.1 GB | 0.25 GB | **2.01 GB** | ❌ Exceeds |
-| **seq_len=128** | **0.53 GB** | **1.0 GB** | **0.065 GB** | **0.1 GB** | **0.25 GB** | **1.95 GB** | ❌ **Still Exceeds** |
+**Scenario A: All weights in int4 (including embedding)**
+
+| Context Length | Weights (int4) | KV Cache | Act. | System | **Total** | Feasibility |
+|---------------|---------------|----------|------|--------|-----------|-------------|
+| seq_len=512 | 0.66 GB | 0.034 GB | 0.001 GB | 0.25 GB | **0.95 GB** | ✅ Fits |
+| seq_len=256 | 0.66 GB | 0.017 GB | 0.001 GB | 0.25 GB | **0.93 GB** | ✅ Fits |
+| seq_len=128 | 0.66 GB | 0.008 GB | 0.001 GB | 0.25 GB | **0.92 GB** | ✅ Fits |
+
+**Scenario B: Embedding in bfloat16, rest in int4**
+
+| Context Length | Weights | KV Cache | Act. | System | **Total** | Feasibility |
+|---------------|---------|----------|------|--------|-----------|-------------|
+| seq_len=256 | 1.04 GB | 0.017 GB | 0.001 GB | 0.25 GB | **1.31 GB** | ❌ Exceeds |
 
 ---
 
 ## 5. 💡 Conclusions and Recommendations
 
-### ⚠️ Critical Finding
+### ✅ Key Corrections from Safetensors Verification
 
-**Using int4 quantization with dequantized embedding table**:
-- seq_len=256: Total requirement **2.01 GB** (exceeds 1GB limit)
-- seq_len=128: Total requirement **1.95 GB** (still exceeds)
+1. **Embedding is part of model weights** — the original report double-counted it as a separate 1.0 GB item
+2. **KV cache was 4× overestimated** — `kv_dim = 512` (GQA), not 2048
+3. **Activations were overestimated** — token-by-token inference only needs ~1 MB, not 50-100 MB
 
-**Root Cause**: The embedding table (vocab_size × dim) requires 1.0 GB when dequantized to float32 at runtime, which dominates memory usage.
+### 📊 Updated Feasibility
 
-### Feasible Solutions
+**If embedding is quantized to int4** (requires custom C implementation):
+- seq_len=512: Total **~0.95 GB** → ✅ **Fits in 1 GB DDR4!**
+- Headroom is tight (~50 MB), careful memory management required
 
-| Solution | Description | Feasibility |
-|----------|-------------|-------------|
-| **Solution A: Upgrade to 2GB RAM** | Use 2GB DDR4 FPGA board | ✅ **Required**, not optional |
-| **Solution B: Keep Embedding Quantized** | Modify code to keep embedding table in int4 | ⚠️ Slower lookup, complex implementation |
-| **Solution C: Use Smaller Vocab** | Reduce vocabulary size | ⚠️ Requires model retraining |
+**If embedding remains in bfloat16/float32** (simpler implementation):
+- Total **~1.04-1.3 GB** → ❌ Exceeds 1 GB limit
+- Would require 2 GB DDR4 upgrade
 
-### Weekly Conclusion
+### Recommended Path Forward
 
-**Updated Recommendations**:
+1. **Primary approach**: Implement int4 quantization for **ALL** weights including embedding
+   - Requires custom int4 embedding lookup in C code
+   - With seq_len=512, total memory fits within 1 GB
+   - Tight margin (~50 MB headroom) — careful memory management required
 
-1. **Hardware Upgrade is Mandatory**
-   - **Minimum requirement**: 2GB DDR4 RAM
-   - Even with int4 and seq_len=128, we need ~1.95 GB
-   - 1GB DDR4 is **insufficient** for this model
-
-2. **With 2GB RAM, two options**:
-   - **Option A (Simpler)**: Use int8 with existing runq.c code
-     - Total: ~2.5 GB (need to reduce seq_len or optimize further)
-   - **Option B (Optimal)**: Implement int4 with quantized embedding lookup
-     - Could fit in 2GB with careful optimization
-     - Requires significant code modification
-
-3. **Critical Decision Required**:
-   - ✅ **Must upgrade FPGA board to at least 2GB RAM**
-   - ✅ Evaluate if 4GB RAM board is available (recommended)
-   - ✅ If hardware upgrade impossible, consider smaller model (e.g., 500M parameters)
+2. **Fallback**: If int4 embedding is too complex to implement, upgrade to 2 GB DDR4 board

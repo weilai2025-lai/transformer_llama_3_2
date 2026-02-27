@@ -84,6 +84,58 @@ Int4 requires packing 2 values into 1 byte:
 uint8_t packed = (val1 & 0x0F) | ((val2 & 0x0F) << 4);
 ```
 
+### 3.4 NF4 vs Traditional Int4 Comparison
+
+**Traditional Int4**: Uses 16 **uniformly spaced** values (-8 to 7), scaled by a single factor.
+
+**NF4 (NormalFloat 4-bit)**: Uses 16 **non-uniformly spaced** values from a lookup table, optimized for normally-distributed weights (more values near 0, fewer at extremes).
+
+#### Lookup Table Comparison
+
+```
+Traditional Int4 (after scaling by absmax/7):
+  indices: -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7
+  → uniformly spaced
+
+NF4 (approximate normalized values from quant_map):
+  indices:  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15
+  values: -1.0, -0.69, -0.52, -0.39, -0.28, -0.18, -0.09, -0.03,
+           0.03,  0.09,  0.18,  0.28,  0.39,  0.52,  0.69,  1.0
+  → denser near 0, sparser at extremes
+```
+
+#### Example: Same Weights `[0.1, 0.5, 1.2, 2.8, -0.3]`
+
+```
+absmax = 2.8
+
+=== Traditional Int4 ===
+Normalize:     0.1/2.8=0.036   0.5/2.8=0.179   1.2/2.8=0.429   2.8/2.8=1.0   -0.3/2.8=-0.107
+Scale to -8~7: ×7 → 0.25       1.25             3.0              7.0           -0.75
+Round:              0            1                3                7             -1
+Dequant:       0×0.4=0.0       1×0.4=0.4        3×0.4=1.2        7×0.4=2.8     -1×0.4=-0.4
+Error:              0.1          0.1              0.0              0.0            0.1
+
+=== NF4 ===
+Normalize:     0.036            0.179            0.429            1.0           -0.107
+Find nearest:  0.03(idx=7)      0.18(idx=9)      0.39(idx=12)     1.0(idx=15)   -0.09(idx=6)
+Dequant:       0.03×2.8=0.084   0.18×2.8=0.504   0.39×2.8=1.092   1.0×2.8=2.8  -0.09×2.8=-0.252
+Error:              0.016        0.004            0.108            0.0            0.048
+```
+
+#### Error Comparison
+
+| Weight | Int4 Error | NF4 Error | Winner |
+|--------|-----------|-----------|--------|
+| 0.1    | 0.100     | **0.016** | NF4 |
+| 0.5    | 0.100     | **0.004** | NF4 |
+| 1.2    | **0.000** | 0.108     | Int4 |
+| 2.8    | 0.000     | 0.000     | Tie |
+| -0.3   | 0.100     | **0.048** | NF4 |
+
+> [!NOTE]
+> NF4 wins on **small values near 0** (which are the majority in neural networks), while Int4 can be more accurate for values that happen to land on its uniform grid. Overall, NF4 produces lower average error for normally-distributed weights.
+
 ---
 
 ## 4. Memory Analysis (1GB DDR4 Constraint)
@@ -105,84 +157,70 @@ uint8_t packed = (val1 & 0x0F) | ((val2 & 0x0F) << 4);
 > [!WARNING]
 > The current bnb-4bit model stores embedding in **bfloat16** (0.525 GB, NOT quantized). Only linear layers are quantized to nf4.
 
-### 4.2 Model Weights in Int4 (Storage)
+### 4.2 Baseline Memory Breakdown
 
-**Scenario A: All weights quantized to int4 (including embedding)**
+#### On-Disk (Safetensors As-Is)
+
+| Category | Format | Contents | Size |
+|----------|--------|----------|------|
+| Embedding | bfloat16 | `embed_tokens` (128,256 × 2,048) | 0.525 GB |
+| LayerNorms | bfloat16 | 32 × `layernorm` + `model.norm` | 0.0001 GB |
+| Linear weights | nf4 (4-bit) | `q/k/v/o_proj`, `gate/up/down_proj` × 16 layers | 0.486 GB |
+| Quant metadata | mixed | `quant_map`, `absmax`, `nested_absmax`, `quant_state` | 0.016 GB |
+| **Total on-disk** | | | **1.028 GB** |
+
+#### Runtime (Additional Memory Needed for Inference)
+
+| Category | Formula | Size |
+|----------|---------|------|
+| Activation buffers | Reusable vectors (dim=2048, intermediate=8192) | ~1 MB |
+| Logits | vocab_size × 4 bytes = 128,256 × 4 | 0.5 MB |
+| KV Cache (seq_len=128) | 16 × 2 × 128 × 512 × 4 | 0.008 GB |
+| KV Cache (seq_len=256) | 16 × 2 × 256 × 512 × 4 | 0.017 GB |
+| KV Cache (seq_len=512) | 16 × 2 × 512 × 512 × 4 | 0.034 GB |
+| KV Cache (seq_len=2048) | 16 × 2 × 2048 × 512 × 4 | 0.134 GB |
+| System overhead | OS kernel + drivers + tokenizer | ~0.25 GB |
+
+> [!NOTE]
+> KV Cache uses `kv_dim = 512` (not 2048) because of **GQA**: `num_key_value_heads = 8` × `head_dim = 64` = 512.
+
+> [!NOTE]
+> **NF4 Dequantization** (required at inference — computation must use float):
+> ```
+> 1. Unpack: each uint8 byte contains 2 × 4-bit indices (0~15)
+> 2. Lookup: quant_map[4bit_index] → normalized float value
+> 3. Scale:  float_value = quant_map[index] × absmax[group_id]
+> ```
+
+### 4.3 FPGA Deployment Scenarios (1 GB DDR4 Constraint)
+
+#### Scenario A: All weights quantized to int4 (including embedding)
+
+Re-quantize everything to uniform int4 for FPGA, discarding the bnb nf4 format:
 ```
-Weight Size = 1.236B × 4 bits / 8 = 0.618 GB
-
-Scale factors (group_size=128, float32):
-  (1.236B / 128) × 4 bytes ≈ 0.04 GB
-
-Total weights (int4): ~0.66 GB
-```
-
-**Scenario B: Embedding kept in bfloat16 (like current bnb model)**
-```
-Embedding (bfloat16): 262M × 2 bytes = 0.525 GB
-Other weights (int4): 973M × 4/8 + scale ≈ 0.52 GB
-Total: ~1.04 GB (already exceeds 1 GB!)
-```
-
-### 4.3 KV Cache
-
-> [!WARNING]
-> **Correction**: This model uses **GQA (Grouped Query Attention)** with `num_key_value_heads = 8` and `head_dim = 64`, so `kv_dim = 8 × 64 = 512` (NOT 2048).
-
-**Formula**:
-```
-KV_Cache = n_layers × 2 × seq_len × kv_dim × sizeof(float)
-         = 16 × 2 × seq_len × 512 × 4
-```
-
-| seq_len | KV Cache Size |
-|---------|---------------|
-| 2048 | 16 × 2 × 2048 × 512 × 4 = **0.134 GB** |
-| 512  | 16 × 2 × 512 × 512 × 4 = **0.034 GB** |
-| 256  | 16 × 2 × 256 × 512 × 4 = **0.017 GB** |
-| 128  | 16 × 2 × 128 × 512 × 4 = **0.008 GB** |
-
-### 4.4 Activations
-
-For token-by-token inference (no batching), buffers are reused across layers:
-```
-- Reusable buffers (x, xb, q, k, v, hb, etc.):
-  dim=2048 and intermediate_size=8192 vectors
-  ~100 KB (reused across layers)
-- Attention scores: num_heads × seq_len × 4 bytes
-  (32 × 256 × 4 = 32 KB per layer)
-- Total activation buffers: ~1 MB
+All weights:   1.236B × 4 bits / 8 = 0.618 GB
+Scale factors: (1.236B / 128) × 4  ≈ 0.04  GB
+Total weights:                      ≈ 0.66  GB
 ```
 
-### 4.5 Logits
+| seq_len | Weights | KV Cache | Act. + Logits | System | **Total** | Feasibility |
+|---------|---------|----------|---------------|--------|-----------|-------------|
+| 512 | 0.66 GB | 0.034 GB | 0.002 GB | 0.25 GB | **0.95 GB** | ✅ Fits |
+| 256 | 0.66 GB | 0.017 GB | 0.002 GB | 0.25 GB | **0.93 GB** | ✅ Fits |
+| 128 | 0.66 GB | 0.008 GB | 0.002 GB | 0.25 GB | **0.92 GB** | ✅ Fits |
 
+#### Scenario B: Embedding in bfloat16, linear weights in int4
+
+Keep embedding as-is from safetensors (simpler, no re-quantization of embedding):
 ```
-vocab_size × 4 bytes = 128,256 × 4 = 0.5 MB
+Embedding (bfloat16): 262M × 2 bytes       = 0.525 GB
+Linear weights (int4): 973M × 4/8 + scale  ≈ 0.52  GB
+Total weights:                              ≈ 1.04  GB  ← already exceeds 1 GB!
 ```
 
-### 4.6 System Overhead
-
-```
-- OS kernel + drivers: ~150-200 MB
-- Tokenizer (program + vocabulary): ~30-40 MB
-- Total: ~200-250 MB
-```
-
-### 4.7 Total Memory Requirements (Int4 Version)
-
-**Scenario A: All weights in int4 (including embedding)**
-
-| Context Length | Weights (int4) | KV Cache | Act. | System | **Total** | Feasibility |
-|---------------|---------------|----------|------|--------|-----------|-------------|
-| seq_len=512 | 0.66 GB | 0.034 GB | 0.001 GB | 0.25 GB | **0.95 GB** | ✅ Fits |
-| seq_len=256 | 0.66 GB | 0.017 GB | 0.001 GB | 0.25 GB | **0.93 GB** | ✅ Fits |
-| seq_len=128 | 0.66 GB | 0.008 GB | 0.001 GB | 0.25 GB | **0.92 GB** | ✅ Fits |
-
-**Scenario B: Embedding in bfloat16, rest in int4**
-
-| Context Length | Weights | KV Cache | Act. | System | **Total** | Feasibility |
-|---------------|---------|----------|------|--------|-----------|-------------|
-| seq_len=256 | 1.04 GB | 0.017 GB | 0.001 GB | 0.25 GB | **1.31 GB** | ❌ Exceeds |
+| seq_len | Weights | KV Cache | Act. + Logits | System | **Total** | Feasibility |
+|---------|---------|----------|---------------|--------|-----------|-------------|
+| 256 | 1.04 GB | 0.017 GB | 0.002 GB | 0.25 GB | **1.31 GB** | ❌ Exceeds |
 
 ---
 
@@ -196,11 +234,11 @@ vocab_size × 4 bytes = 128,256 × 4 = 0.5 MB
 
 ### 📊 Updated Feasibility
 
-**If embedding is quantized to int4** (requires custom C implementation):
+**Scenario A (all int4 including embedding)**:
 - seq_len=512: Total **~0.95 GB** → ✅ **Fits in 1 GB DDR4!**
 - Headroom is tight (~50 MB), careful memory management required
 
-**If embedding remains in bfloat16/float32** (simpler implementation):
+**Scenario B (embedding in bfloat16)**:
 - Total **~1.04-1.3 GB** → ❌ Exceeds 1 GB limit
 - Would require 2 GB DDR4 upgrade
 
@@ -212,3 +250,4 @@ vocab_size × 4 bytes = 128,256 × 4 = 0.5 MB
    - Tight margin (~50 MB headroom) — careful memory management required
 
 2. **Fallback**: If int4 embedding is too complex to implement, upgrade to 2 GB DDR4 board
+

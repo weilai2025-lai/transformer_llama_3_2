@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>runq.c × Llama 3.2 架構對照</title>
+  <meta name="description" content="Interactive visualization mapping runq.c C code to Llama 3.2 Transformer architecture">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div style="display:flex;align-items:center;">
+      <h1>runq.c × Llama 3.2</h1>
+      <span class="subtitle">互動式程式碼 — 架構對照可視化工具</span>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="nav-btn" onclick="resetTour()" style="font-size:12px;">⟳ 重置導覽</button>
+    </div>
+  </header>
+
+  <div class="main-container">
+    <!-- Left: Code Panel -->
+    <div class="code-panel" id="code-panel">
+      <!-- Rendered by JS -->
+    </div>
+
+    <!-- Right: Architecture Diagram -->
+    <div class="arch-panel" id="arch-panel">
+      <!-- Rendered by JS -->
+    </div>
+  </div>
+
+  <!-- Bottom: Navigation Bar -->
+  <div class="nav-bar">
+    <button class="nav-btn" id="btn-prev" onclick="goStep(-1)" disabled>← 上一步</button>
+    <span class="step-label" id="step-label">按 <strong>下一步</strong> 開始 Forward Pass 導讀</span>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+    </div>
+    <button class="nav-btn" id="btn-next" onclick="goStep(1)">下一步 →</button>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

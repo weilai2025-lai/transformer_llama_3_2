@@ -1,0 +1,8 @@
+# Large model and media files
+*.bin
+*.safetensors
+*.m4a
+*.mkv
+*.mp4
+*.pth
+*.pt

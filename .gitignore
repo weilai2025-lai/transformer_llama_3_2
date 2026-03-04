@@ -6,3 +6,9 @@
 *.mp4
 *.pth
 *.pt
+
+# OS and IDE
+.DS_Store
+
+# Python
+__pycache__/
